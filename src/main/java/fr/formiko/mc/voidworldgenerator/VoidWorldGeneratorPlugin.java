@@ -60,7 +60,7 @@ public class VoidWorldGeneratorPlugin extends JavaPlugin implements Listener {
         getLogger().info("§e[DEBUG] Has played before: " + player.hasPlayedBefore());
         getLogger().info("§e[DEBUG] World: " + player.getWorld().getName());
 
-        // Check if this is the player's first time joining
+        // Only teleport if this is the player's first time joining
         if (!player.hasPlayedBefore()) {
             getLogger().info("§e[DEBUG] New player detected, generating island immediately...");
             // Generate island for new player immediately (no delay)
@@ -68,14 +68,9 @@ public class VoidWorldGeneratorPlugin extends JavaPlugin implements Listener {
                 getLogger().info("§e[DEBUG] Running island generation task...");
                 islandManager.generateIslandForPlayer(player);
             });
-        } else if (islandManager.hasIsland(player)) {
-            getLogger().info("§e[DEBUG] Existing player with island, teleporting...");
-            // Teleport returning players to their island
-            getServer().getScheduler().runTaskLater(this, () -> {
-                islandManager.teleportToIsland(player);
-            }, 10L); // 0.5 second delay
         } else {
-            getLogger().info("§e[DEBUG] Existing player without island");
+            getLogger().info("§e[DEBUG] Existing player - leaving them where they logged out");
+            // Do nothing - let them stay where they logged out
         }
     }
 

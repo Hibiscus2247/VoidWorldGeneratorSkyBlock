@@ -33,6 +33,7 @@ public class IslandManager {
         World world = player.getWorld();
 
         if (playerIslands.containsKey(player.getUniqueId())) {
+            // Island already exists, just teleport
             teleportToIsland(player);
             return;
         }
@@ -42,7 +43,12 @@ public class IslandManager {
         new BukkitRunnable() {
             @Override
             public void run() {
-                generateIsland(islandLocation);
+                // Check if island blocks already exist at this location
+                if (isIslandAlreadyGenerated(islandLocation)) {
+                    plugin.getLogger().info("§a[DEBUG] Island already exists at location, skipping generation");
+                } else {
+                    generateIsland(islandLocation);
+                }
 
                 new BukkitRunnable() {
                     @Override
@@ -145,6 +151,12 @@ public class IslandManager {
                 location.getChunk().load(true);
             }
             location.getChunk().setForceLoaded(true);
+
+            // Check if chest already exists and is populated
+            if (location.getBlock().getType() == Material.CHEST && isChestAlreadyPopulated(location)) {
+                plugin.getLogger().info("§a[DEBUG] Chest already exists and is populated, skipping generation");
+                return;
+            }
 
             // Set the chest block
             Block block = location.getBlock();
@@ -326,7 +338,7 @@ public class IslandManager {
                 }
             }
 
-            if (itemCount >= 6) {
+            if (itemCount >= 2) {
                 plugin.getLogger().info("§a[SUCCESS] Chest successfully populated with " + itemCount + " items after " + (attempt + 1) + " attempts!");
 
                 // Log contents for verification
@@ -360,7 +372,36 @@ public class IslandManager {
         generateStarterChest(location);
     }
 
+    private boolean isChestAlreadyPopulated(Location location) {
+        Block block = location.getBlock();
+        if (block.getType() != Material.CHEST) {
+            return false;
+        }
 
+        if (block.getState() instanceof Chest chest) {
+            Inventory inventory = chest.getBlockInventory();
+            ItemStack[] contents = inventory.getContents();
+
+            // Check if chest has any items
+            for (ItemStack item : contents) {
+                if (item != null && item.getType() != Material.AIR) {
+                    return true; // Chest has items, don't repopulate
+                }
+            }
+        }
+        return false; // Chest is empty, needs population
+    }
+
+    private boolean isIslandAlreadyGenerated(Location center) {
+        World world = center.getWorld();
+        if (world == null) return false;
+
+        // Check if the grass block exists (top layer of island)
+        int cx = center.getBlockX(), cy = center.getBlockY(), cz = center.getBlockZ();
+        Block grassBlock = world.getBlockAt(cx, cy + 5, cz);
+
+        return grassBlock.getType() == Material.GRASS_BLOCK;
+    }
 
     public boolean hasIsland(Player player) {
         return playerIslands.containsKey(player.getUniqueId());
