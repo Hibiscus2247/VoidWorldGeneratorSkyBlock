@@ -5,24 +5,33 @@ import org.bukkit.Material;
 import org.bukkit.TreeType;
 import org.bukkit.World;
 import org.bukkit.block.Block;
+import org.bukkit.block.Chest;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.scheduler.BukkitRunnable;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Random;
+import java.util.Set;
+import java.util.HashSet;
 import java.util.UUID;
 
 public class IslandManager {
     private final VoidWorldGeneratorPlugin plugin;
     private final Map<UUID, Location> playerIslands;
-    private int nextIslandX = 0;
-    private int nextIslandZ = 0;
-    private static final int ISLAND_SPACING = 100; // Distance between islands
+    private final Set<String> usedPositions; // Track used positions to avoid overlaps
+    private final Random random;
+    private static final int MAX_RANGE = 100000; // Maximum distance from 0,0
+    private static final int MIN_DISTANCE = 200; // Minimum distance between islands
 
     public IslandManager(VoidWorldGeneratorPlugin plugin) {
         this.plugin = plugin;
         this.playerIslands = new HashMap<>();
+        this.usedPositions = new HashSet<>();
+        this.random = new Random();
         loadPlayerIslands();
     }
 
@@ -35,8 +44,8 @@ public class IslandManager {
             return;
         }
 
-        // Calculate island position
-        Location islandLocation = calculateNextIslandLocation(world);
+        // Calculate random island position
+        Location islandLocation = calculateRandomIslandLocation(world);
 
         // Generate island asynchronously to avoid blocking the main thread
         new BukkitRunnable() {
@@ -52,8 +61,8 @@ public class IslandManager {
                         playerIslands.put(player.getUniqueId(), islandLocation);
                         savePlayerIslands();
 
-                        // Teleport player to their new island
-                        Location spawnLocation = islandLocation.clone().add(3, 7, 3); // Top center of island
+                        // Teleport player to a safe spawn location (away from tree)
+                        Location spawnLocation = islandLocation.clone().add(1, 7, 1); // Corner of island, away from tree
                         player.teleport(spawnLocation);
                         player.setRespawnLocation(spawnLocation);
 
@@ -64,17 +73,35 @@ public class IslandManager {
         }.runTask(plugin);
     }
 
-    private Location calculateNextIslandLocation(World world) {
-        // Simple grid pattern for island placement
-        Location location = new Location(world, nextIslandX, 64, nextIslandZ);
+    private Location calculateRandomIslandLocation(World world) {
+        Location location;
+        String positionKey;
+        int attempts = 0;
+        int maxAttempts = 100;
 
-        // Move to next position
-        nextIslandX += ISLAND_SPACING;
-        if (nextIslandX > 1000) { // Reset X and move Z forward after 10 islands in a row
-            nextIslandX = 0;
-            nextIslandZ += ISLAND_SPACING;
+        do {
+            // Generate random coordinates within the range
+            int x = random.nextInt(MAX_RANGE * 2) - MAX_RANGE; // -100000 to +100000
+            int z = random.nextInt(MAX_RANGE * 2) - MAX_RANGE; // -100000 to +100000
+
+            // Round to nearest multiple of MIN_DISTANCE to create some spacing
+            x = (x / MIN_DISTANCE) * MIN_DISTANCE;
+            z = (z / MIN_DISTANCE) * MIN_DISTANCE;
+
+            location = new Location(world, x, 64, z);
+            positionKey = x + "," + z;
+            attempts++;
+
+        } while (usedPositions.contains(positionKey) && attempts < maxAttempts);
+
+        if (attempts >= maxAttempts) {
+            plugin.getLogger().warning("§c[DEBUG] Could not find unique position after " + maxAttempts + " attempts, using last generated position");
         }
 
+        // Mark this position as used
+        usedPositions.add(positionKey);
+
+        plugin.getLogger().info("§e[DEBUG] Generated random island location: " + location.getX() + ", " + location.getZ());
         return location;
     }
 
@@ -95,7 +122,7 @@ public class IslandManager {
 
         int blocksPlaced = 0;
 
-        // Create 6x6x6 cube of dirt (actually 6x6x6 means 6 blocks in each direction)
+        // Create 6x6x6 cube of dirt
         for (int x = centerX; x < centerX + 6; x++) {
             for (int z = centerZ; z < centerZ + 6; z++) {
                 for (int y = centerY; y < centerY + 6; y++) {
@@ -114,20 +141,48 @@ public class IslandManager {
 
         plugin.getLogger().info("§e[DEBUG] Placed " + blocksPlaced + " blocks for island");
 
-        // Generate oak tree on top of the island
-        // Tree should be placed at the center-ish of the top surface
-        Location treeLocation = new Location(world, centerX + 3, centerY + 6, centerZ + 3);
+        // Generate oak tree at one corner (not center) to avoid spawn conflicts
+        Location treeLocation = new Location(world, centerX + 4, centerY + 6, centerZ + 4);
         plugin.getLogger().info("§e[DEBUG] Generating tree at: " + treeLocation.getX() + ", " + treeLocation.getY() + ", " + treeLocation.getZ());
 
-        // Use Bukkit's built-in tree generation (on main thread)
-        boolean treeGenerated = world.generateTree(treeLocation, TreeType.TREE); // TREE is oak tree
+        boolean treeGenerated = world.generateTree(treeLocation, TreeType.TREE);
         plugin.getLogger().info("§e[DEBUG] Tree generation " + (treeGenerated ? "successful" : "failed"));
+
+        // Generate chest with starter items at opposite corner from tree
+        Location chestLocation = new Location(world, centerX + 1, centerY + 6, centerZ + 1);
+        generateStarterChest(chestLocation);
+    }
+
+    private void generateStarterChest(Location location) {
+        World world = location.getWorld();
+        if (world == null) {
+            plugin.getLogger().warning("§c[DEBUG] World is null, cannot generate chest!");
+            return;
+        }
+
+        Block chestBlock = world.getBlockAt(location);
+        chestBlock.setType(Material.CHEST);
+
+        if (chestBlock.getState() instanceof Chest) {
+            Chest chest = (Chest) chestBlock.getState();
+            Inventory chestInventory = chest.getInventory();
+
+            // Add starter items
+            chestInventory.addItem(new ItemStack(Material.LAVA_BUCKET, 1));
+            chestInventory.addItem(new ItemStack(Material.ICE, 1));
+
+            chest.update();
+            plugin.getLogger().info("§e[DEBUG] Generated starter chest with lava bucket and ice block");
+        } else {
+            plugin.getLogger().warning("§c[DEBUG] Failed to create chest - block state is not a chest");
+        }
     }
 
     public void teleportToIsland(Player player) {
         Location islandLocation = playerIslands.get(player.getUniqueId());
         if (islandLocation != null) {
-            Location spawnLocation = islandLocation.clone().add(3, 7, 3);
+            // Teleport to safe location (corner of island, away from tree)
+            Location spawnLocation = islandLocation.clone().add(1, 7, 1);
             player.teleport(spawnLocation);
         }
     }
@@ -149,7 +204,12 @@ public class IslandManager {
 
                     World world = plugin.getServer().getWorld(worldName);
                     if (world != null) {
-                        playerIslands.put(uuid, new Location(world, x, y, z));
+                        Location location = new Location(world, x, y, z);
+                        playerIslands.put(uuid, location);
+
+                        // Mark this position as used
+                        String positionKey = (int)x + "," + (int)z;
+                        usedPositions.add(positionKey);
                     }
                 } catch (Exception e) {
                     plugin.getLogger().warning("Failed to load island for player: " + uuidString);
@@ -157,9 +217,8 @@ public class IslandManager {
             }
         }
 
-        // Load next island position
-        nextIslandX = config.getInt("nextIslandX", 0);
-        nextIslandZ = config.getInt("nextIslandZ", 0);
+        plugin.getLogger().info("§e[DEBUG] Loaded " + playerIslands.size() + " player islands");
+        plugin.getLogger().info("§e[DEBUG] Loaded " + usedPositions.size() + " used positions");
     }
 
     private void savePlayerIslands() {
@@ -178,10 +237,6 @@ public class IslandManager {
             config.set("playerIslands." + uuidString + ".y", location.getY());
             config.set("playerIslands." + uuidString + ".z", location.getZ());
         }
-
-        // Save next island position
-        config.set("nextIslandX", nextIslandX);
-        config.set("nextIslandZ", nextIslandZ);
 
         plugin.saveConfig();
     }
