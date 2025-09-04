@@ -7,6 +7,10 @@ import org.bstats.bukkit.Metrics;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.block.Biome;
+import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.generator.BiomeProvider;
 import org.bukkit.generator.BlockPopulator;
 import org.bukkit.generator.ChunkGenerator;
@@ -15,28 +19,75 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * Generate empty chunks with the config biome.
+ * Generate empty chunks with the config biome and spawn islands for new players.
  */
-public class VoidWorldGeneratorPlugin extends JavaPlugin {
+public class VoidWorldGeneratorPlugin extends JavaPlugin implements Listener {
     private ConfigSettings configSettings;
+    private IslandManager islandManager;
+
     @Override
     public void onEnable() {
-        new Metrics(this, 20171);
+        // new Metrics(this, 20171); // Temporarily disabled - missing dependency
         saveDefaultConfig();
         configSettings = new ConfigSettings();
+        islandManager = new IslandManager(this);
+
+        // Register event listener
+        getServer().getPluginManager().registerEvents(this, this);
+
+        getLogger().info("VoidWorldGenerator enabled with island generation!");
     }
 
-    public static VoidWorldGeneratorPlugin getInstance() { return getPlugin(VoidWorldGeneratorPlugin.class); }
+    public static VoidWorldGeneratorPlugin getInstance() {
+        return getPlugin(VoidWorldGeneratorPlugin.class);
+    }
 
     @Override
-    public ChunkGenerator getDefaultWorldGenerator(String worldName, String id) { return new VoidChunkGenerator(worldName); }
+    public ChunkGenerator getDefaultWorldGenerator(String worldName, String id) {
+        return new VoidChunkGenerator(worldName);
+    }
+
+    public IslandManager getIslandManager() {
+        return islandManager;
+    }
+
+    @EventHandler
+    public void onPlayerJoin(PlayerJoinEvent event) {
+        Player player = event.getPlayer();
+
+        getLogger().info("§e[DEBUG] Player joined: " + player.getName());
+        getLogger().info("§e[DEBUG] Has played before: " + player.hasPlayedBefore());
+        getLogger().info("§e[DEBUG] World: " + player.getWorld().getName());
+
+        // Check if this is the player's first time joining
+        if (!player.hasPlayedBefore()) {
+            getLogger().info("§e[DEBUG] New player detected, scheduling island generation...");
+            // Generate island for new player (with a small delay to ensure world is loaded)
+            getServer().getScheduler().runTaskLater(this, () -> {
+                getLogger().info("§e[DEBUG] Running island generation task...");
+                islandManager.generateIslandForPlayer(player);
+            }, 20L); // 1 second delay
+        } else if (islandManager.hasIsland(player)) {
+            getLogger().info("§e[DEBUG] Existing player with island, teleporting...");
+            // Teleport returning players to their island
+            getServer().getScheduler().runTaskLater(this, () -> {
+                islandManager.teleportToIsland(player);
+            }, 10L); // 0.5 second delay
+        } else {
+            getLogger().info("§e[DEBUG] Existing player without island");
+        }
+    }
 
     private class VoidChunkGenerator extends ChunkGenerator {
         private final String worldName;
-        private VoidChunkGenerator(String worldName) { this.worldName = worldName; }
+        private VoidChunkGenerator(String worldName) {
+            this.worldName = worldName;
+        }
 
         @Override
-        public List<BlockPopulator> getDefaultPopulators(World world) { return List.of(); }
+        public List<BlockPopulator> getDefaultPopulators(World world) {
+            return List.of();
+        }
 
         @Override
         public void generateNoise(@NotNull WorldInfo worldInfo, @NotNull Random random, int chunkX, int chunkZ,
@@ -52,11 +103,13 @@ public class VoidWorldGeneratorPlugin extends JavaPlugin {
                                     @NotNull ChunkData chunkData) {
             // No need to generate surface, we want an empty world
         }
+
         @Override
         public void generateBedrock(@NotNull WorldInfo worldInfo, @NotNull Random random, int chunkX, int chunkZ,
                                     @NotNull ChunkData chunkData) {
             // No need to generate bedrock, we want an empty world
         }
+
         @Override
         public void generateCaves(@NotNull WorldInfo worldInfo, @NotNull Random random, int chunkX, int chunkZ,
                                   @NotNull ChunkData chunkData) {
@@ -71,7 +124,8 @@ public class VoidWorldGeneratorPlugin extends JavaPlugin {
 
         @Override
         public Location getFixedSpawnLocation(World world, Random random) {
-            // Ensure spawn Y is within world bounds
+            // For void worlds with islands, we'll let the IslandManager handle spawning
+            // But still provide a fallback spawn location
             int spawnY = configSettings.getSpawnY(worldName);
             if (spawnY < world.getMinHeight()) {
                 spawnY = world.getMinHeight() + 1;
@@ -82,6 +136,5 @@ public class VoidWorldGeneratorPlugin extends JavaPlugin {
             return new Location(world, configSettings.getSpawnX(worldName), spawnY,
                     configSettings.getSpawnZ(worldName));
         }
-
     }
 }
