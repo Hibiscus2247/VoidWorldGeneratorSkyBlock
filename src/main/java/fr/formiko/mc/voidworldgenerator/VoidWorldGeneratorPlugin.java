@@ -83,15 +83,22 @@ public class VoidWorldGeneratorPlugin extends JavaPlugin implements Listener {
     public void onPlayerRespawn(PlayerRespawnEvent event) {
         Player player = event.getPlayer();
 
-        // Check if the player has an island and should respawn there
-        if (islandManager.hasIsland(player)) {
+        // Only override if Minecraft didn't already resolve a valid bed spawn
+        if (!event.isBedSpawn()) {
             Location islandSpawn = islandManager.getIslandSpawnLocation(player);
             if (islandSpawn != null) {
                 event.setRespawnLocation(islandSpawn);
-                getLogger().info("§e[DEBUG] Player " + player.getName() + " respawning at their island");
+                getLogger().info("§e[DEBUG] Player " + player.getName() + " has no valid bed. Respawning at island.");
+            } else {
+                getLogger().warning("§c[DEBUG] No island spawn found for " + player.getName() + ". Defaulting to world spawn.");
             }
+        } else {
+            getLogger().info("§e[DEBUG] " + player.getName() + " is using valid bed spawn. No override.");
         }
     }
+
+
+
 
     private class VoidChunkGenerator extends ChunkGenerator {
         private final String worldName;
