@@ -2,9 +2,11 @@ package fr.formiko.mc.voidworldgenerator;
 
 import org.bukkit.*;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockState;
 import org.bukkit.block.Chest;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
+import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.scheduler.BukkitRunnable;
@@ -131,25 +133,234 @@ public class IslandManager {
     }
 
     private void generateStarterChest(Location location) {
-        World world = location.getWorld();
-        if (world == null) {
-            plugin.getLogger().warning("§c[DEBUG] World is null, cannot generate chest!");
+        plugin.getServer().getScheduler().runTask(plugin, () -> {
+            World world = location.getWorld();
+            if (world == null) {
+                plugin.getLogger().warning("§c[ERROR] World is null, can't generate chest at " + location);
+                return;
+            }
+
+            // Ensure chunk is loaded and stays loaded
+            if (!location.getChunk().isLoaded()) {
+                location.getChunk().load(true);
+            }
+            location.getChunk().setForceLoaded(true);
+
+            // Set the chest block
+            Block block = location.getBlock();
+            block.setType(Material.CHEST, true);
+
+            plugin.getLogger().info("§e[DEBUG] Placed chest block at " + location);
+
+            // Wait for the block to fully initialize
+            plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+                populateChestCorrectly(location, 0);
+            }, 20L); // 1 second delay
+        });
+    }
+
+    private void populateChestCorrectly(Location location, int attempt) {
+        if (attempt > 0 && attempt % 20 == 0) {
+            plugin.getLogger().info("§a[PERSISTENT] Still trying to populate chest... attempt " + attempt);
+        }
+
+        Block block = location.getBlock();
+
+        // Verify chunk is still loaded
+        if (!location.getChunk().isLoaded()) {
+            plugin.getLogger().info("§e[DEBUG] Chunk unloaded, reloading...");
+            location.getChunk().load(true);
+            location.getChunk().setForceLoaded(true);
+            plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+                populateChestCorrectly(location, attempt + 1);
+            }, 40L);
             return;
         }
 
-        Block chestBlock = world.getBlockAt(location);
-        chestBlock.setType(Material.CHEST);
+        // Verify block is still a chest
+        if (block.getType() != Material.CHEST) {
+            plugin.getLogger().info("§e[DEBUG] Block changed to: " + block.getType() + ", recreating chest...");
+            block.setType(Material.CHEST, true);
+            plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+                populateChestCorrectly(location, attempt + 1);
+            }, 40L);
+            return;
+        }
 
-        if (chestBlock.getState() instanceof Chest chest) {
-            Inventory inv = chest.getInventory();
-            inv.addItem(new ItemStack(Material.LAVA_BUCKET));
-            inv.addItem(new ItemStack(Material.ICE));
-            chest.update();
-            plugin.getLogger().info("§e[DEBUG] Starter chest created.");
-        } else {
-            plugin.getLogger().warning("§c[DEBUG] Failed to create chest.");
+        try {
+            // METHOD 1: Direct inventory access without BlockState update
+            plugin.getLogger().info("§e[DEBUG] Attempt " + (attempt + 1) + " - Using direct inventory access");
+
+            // Get the block as a chest and access its inventory directly
+            if (block.getState() instanceof Chest chest) {
+                Inventory inventory = chest.getBlockInventory();
+
+                // Clear and populate the inventory
+                inventory.clear();
+
+                ItemStack[] items = {
+                        new ItemStack(Material.LAVA_BUCKET, 1),
+                        new ItemStack(Material.WATER_BUCKET, 1)
+                };
+
+                // Set items directly in the inventory
+                for (int i = 0; i < items.length; i++) {
+                    inventory.setItem(i, items[i]);
+                }
+
+                plugin.getLogger().info("§e[DEBUG] Items set directly in inventory: " + Arrays.toString(inventory.getContents()));
+
+                // DO NOT call chest.update() - this is what was clearing the inventory!
+                // The inventory changes are automatically saved when we modify the live inventory
+
+                // Verify immediately
+                plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+                    verifyChestPopulation(location, attempt);
+                }, 10L);
+
+            } else {
+                plugin.getLogger().info("§e[DEBUG] Block state is not a chest, retrying...");
+                plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+                    populateChestCorrectly(location, attempt + 1);
+                }, 40L);
+            }
+
+        } catch (Exception e) {
+            plugin.getLogger().info("§c[DEBUG] Exception during chest population: " + e.getMessage());
+            e.printStackTrace();
+
+            // Fallback: Try the alternative approach
+            if (attempt < 50) { // Reasonable retry limit
+                plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+                    tryAlternativeChestPopulation(location, attempt + 1);
+                }, 60L);
+            } else {
+                plugin.getLogger().warning("§c[ERROR] Failed to populate chest after 50 attempts, giving up.");
+            }
         }
     }
+
+    private void tryAlternativeChestPopulation(Location location, int attempt) {
+        plugin.getLogger().info("§e[DEBUG] Trying alternative approach - using setContents()");
+
+        try {
+            Block block = location.getBlock();
+            if (block.getType() != Material.CHEST) {
+                plugin.getLogger().info("§c[DEBUG] Block changed during alternative method");
+                plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+                    populateChestCorrectly(location, attempt + 1);
+                }, 60L);
+                return;
+            }
+
+            if (block.getState() instanceof Chest chest) {
+                Inventory inventory = chest.getBlockInventory();
+
+                // Create the complete contents array
+                ItemStack[] contents = new ItemStack[27]; // Standard chest size
+                contents[0] = new ItemStack(Material.LAVA_BUCKET, 1);
+                contents[1] = new ItemStack(Material.ICE, 1);
+                contents[2] = new ItemStack(Material.BREAD, 16);
+                contents[3] = new ItemStack(Material.OAK_SAPLING, 4);
+                contents[4] = new ItemStack(Material.BONE_MEAL, 8);
+                contents[5] = new ItemStack(Material.WATER_BUCKET, 1);
+
+                // Use setContents() instead of individual setItem() calls
+                inventory.setContents(contents);
+
+                plugin.getLogger().info("§e[DEBUG] Used setContents() method");
+
+                // Verify the results
+                plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+                    verifyChestPopulation(location, attempt);
+                }, 10L);
+
+            } else {
+                plugin.getLogger().info("§c[DEBUG] Alternative method failed to get chest");
+                if (attempt < 50) {
+                    plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+                        populateChestCorrectly(location, attempt + 1);
+                    }, 60L);
+                }
+            }
+
+        } catch (Exception e) {
+            plugin.getLogger().info("§c[DEBUG] Exception in alternative method: " + e.getMessage());
+            if (attempt < 50) {
+                plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+                    populateChestCorrectly(location, attempt + 1);
+                }, 60L);
+            }
+        }
+    }
+
+    private void verifyChestPopulation(Location location, int attempt) {
+        try {
+            Block block = location.getBlock();
+
+            if (block.getType() != Material.CHEST) {
+                plugin.getLogger().info("§c[DEBUG] Block no longer a chest during verification");
+                plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+                    populateChestCorrectly(location, attempt + 1);
+                }, 60L);
+                return;
+            }
+
+            BlockState state = block.getState();
+            if (!(state instanceof Chest chest)) {
+                plugin.getLogger().info("§c[DEBUG] BlockState not a chest during verification");
+                plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+                    populateChestCorrectly(location, attempt + 1);
+                }, 60L);
+                return;
+            }
+
+            // Use getBlockInventory() for verification too
+            Inventory inventory = chest.getBlockInventory();
+            ItemStack[] contents = inventory.getContents();
+
+            int itemCount = 0;
+            for (ItemStack item : contents) {
+                if (item != null && item.getType() != Material.AIR) {
+                    itemCount++;
+                }
+            }
+
+            if (itemCount >= 6) {
+                plugin.getLogger().info("§a[SUCCESS] Chest successfully populated with " + itemCount + " items after " + (attempt + 1) + " attempts!");
+
+                // Log contents for verification
+                for (int i = 0; i < Math.min(contents.length, 10); i++) {
+                    if (contents[i] != null && contents[i].getType() != Material.AIR) {
+                        plugin.getLogger().info("§a[CONTENTS] Slot " + i + ": " + contents[i].getType() + " x" + contents[i].getAmount());
+                    }
+                }
+
+                // Success! Stop retrying
+                return;
+
+            } else {
+                plugin.getLogger().info("§e[DEBUG] Verification failed - only " + itemCount + " items found (attempt " + (attempt + 1) + ") - retrying...");
+
+                plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+                    populateChestCorrectly(location, attempt + 1);
+                }, 80L); // 4 second delay
+            }
+
+        } catch (Exception e) {
+            plugin.getLogger().info("§c[DEBUG] Exception during verification: " + e.getMessage());
+            plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+                populateChestCorrectly(location, attempt + 1);
+            }, 80L);
+        }
+    }
+
+    private void generateStarterChestWithRetry(Location location, int attempts) {
+        plugin.getLogger().info("§e[DEBUG] Starting chest generation using 1.21.8 API at " + location);
+        generateStarterChest(location);
+    }
+
+
 
     public boolean hasIsland(Player player) {
         return playerIslands.containsKey(player.getUniqueId());
