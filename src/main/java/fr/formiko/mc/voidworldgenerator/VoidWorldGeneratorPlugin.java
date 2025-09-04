@@ -60,10 +60,6 @@ public class VoidWorldGeneratorPlugin extends JavaPlugin {
         }
 
         @Override
-        @Nullable
-        public BiomeProvider getDefaultBiomeProvider(@NotNull WorldInfo worldInfo) { return new VoidBiomeProvider(worldName); }
-
-        @Override
         public boolean canSpawn(World world, int x, int z) { return true; }
 
         @Override
@@ -71,16 +67,5 @@ public class VoidWorldGeneratorPlugin extends JavaPlugin {
             return new Location(world, configSettings.getSpawnX(worldName), configSettings.getSpawnY(worldName),
                     configSettings.getSpawnZ(worldName));
         }
-    }
-    private class VoidBiomeProvider extends BiomeProvider {
-        private final String worldName;
-        private VoidBiomeProvider(String worldName) { this.worldName = worldName; }
-
-        @Override
-        public @NotNull Biome getBiome(@NotNull WorldInfo worldInfo, int x, int y, int z) { return configSettings.getBiome(worldName); }
-
-        @Override
-        public @NotNull List<Biome> getBiomes(@NotNull WorldInfo worldInfo) { return List.of(configSettings.getBiome(worldName)); }
-
     }
 }
