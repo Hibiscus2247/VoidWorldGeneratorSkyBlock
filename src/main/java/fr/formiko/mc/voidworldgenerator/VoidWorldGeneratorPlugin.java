@@ -11,6 +11,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.generator.BiomeProvider;
 import org.bukkit.generator.BlockPopulator;
 import org.bukkit.generator.ChunkGenerator;
@@ -75,6 +76,20 @@ public class VoidWorldGeneratorPlugin extends JavaPlugin implements Listener {
             }, 10L); // 0.5 second delay
         } else {
             getLogger().info("§e[DEBUG] Existing player without island");
+        }
+    }
+
+    @EventHandler
+    public void onPlayerRespawn(PlayerRespawnEvent event) {
+        Player player = event.getPlayer();
+
+        // Check if the player has an island and should respawn there
+        if (islandManager.hasIsland(player)) {
+            Location islandSpawn = islandManager.getIslandSpawnLocation(player);
+            if (islandSpawn != null) {
+                event.setRespawnLocation(islandSpawn);
+                getLogger().info("§e[DEBUG] Player " + player.getName() + " respawning at their island");
+            }
         }
     }
 

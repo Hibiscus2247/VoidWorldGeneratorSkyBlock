@@ -1,13 +1,14 @@
 package fr.formiko.mc.voidworldgenerator;
 
-import org.bukkit.Location;
-import org.bukkit.Material;
-import org.bukkit.TreeType;
-import org.bukkit.World;
+import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.block.Chest;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.block.Action;
+import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.scheduler.BukkitRunnable;
@@ -61,12 +62,18 @@ public class IslandManager {
                         playerIslands.put(player.getUniqueId(), islandLocation);
                         savePlayerIslands();
 
-                        // Teleport player to a safe spawn location (away from tree)
-                        Location spawnLocation = islandLocation.clone().add(1, 7, 1); // Corner of island, away from tree
-                        player.teleport(spawnLocation);
-                        player.setRespawnLocation(spawnLocation);
-
+                        // Set player's bed spawn location (bed is at spawnLocation.subtract(0, 1, 0))
                         player.sendMessage("§aWelcome! Your personal island has been generated!");
+                        Location bedSpawn = player.getBedSpawnLocation();
+                        if (bedSpawn != null) {
+                            // Player has a valid bed spawn, let Minecraft use it
+                            player.sendMessage("Spawning at your bed spawn.");
+                        } else {
+                            // No bed spawn, use island spawn
+                            Location spawnLocation = islandLocation.clone().add(1, 7, 4); // Near the bed
+                            player.teleport(spawnLocation);
+                            player.setRespawnLocation(spawnLocation);
+                        }
                     }
                 }.runTask(plugin);
             }
@@ -181,14 +188,75 @@ public class IslandManager {
     public void teleportToIsland(Player player) {
         Location islandLocation = playerIslands.get(player.getUniqueId());
         if (islandLocation != null) {
-            // Teleport to safe location (corner of island, away from tree)
-            Location spawnLocation = islandLocation.clone().add(1, 7, 1);
-            player.teleport(spawnLocation);
+            Location bedSpawn = player.getBedSpawnLocation();
+            if (bedSpawn != null && bedSpawn.getWorld().equals(islandLocation.getWorld())) {
+                plugin.getLogger().info("§e[DEBUG] Teleporting " + player.getName() + " to bed spawn: " + bedSpawn);
+                player.teleport(bedSpawn);
+            } else {
+                Location spawnLocation = islandLocation.clone().add(1, 7, 1);
+                plugin.getLogger().info("§e[DEBUG] Teleporting " + player.getName() + " to island fallback: " + spawnLocation);
+                player.teleport(spawnLocation);
+                player.setRespawnLocation(spawnLocation);
+            }
+        }
+        plugin.getLogger().info("§e[DEBUG] teleportToIsland called for " + player.getName());
+
+        Location bedSpawn = player.getBedSpawnLocation();
+        if (bedSpawn != null) {
+            plugin.getLogger().info("§e[DEBUG] Bed spawn detected: " + bedSpawn);
+        } else {
+            plugin.getLogger().info("§e[DEBUG] No bed spawn detected.");
+        }
+
+        Location fallback = player.getRespawnLocation();
+        plugin.getLogger().info("§e[DEBUG] Fallback respawn location: " + fallback);
+    }
+
+    @EventHandler
+    public void onPlayerInteract(PlayerInteractEvent event) {
+        if (event.getAction() == Action.RIGHT_CLICK_BLOCK) {
+            Block block = event.getClickedBlock();
+            if (block != null && block.getType().toString().contains("BED")) {
+                Bukkit.getLogger().info("§e[DEBUG] " + event.getPlayer().getName() + " interacted with bed at " + block.getLocation());
+            }
         }
     }
 
+
+    @EventHandler
+    public void onPlayerRespawn(PlayerRespawnEvent event) {
+        Player player = event.getPlayer();
+        Location respawnLocation = event.getRespawnLocation();
+
+        Bukkit.getLogger().info("§e[DEBUG] " + player.getName() + " is respawning at: " + respawnLocation);
+
+        Location bedSpawn = player.getBedSpawnLocation();
+        if (bedSpawn != null) {
+            Bukkit.getLogger().info("§e[DEBUG] Bed spawn exists at: " + bedSpawn);
+        } else {
+            Bukkit.getLogger().info("§e[DEBUG] No bed spawn found for " + player.getName());
+        }
+
+        Location fallbackSpawn = player.getRespawnLocation();
+        if (fallbackSpawn != null) {
+            Bukkit.getLogger().info("§e[DEBUG] Fallback respawn location set to: " + fallbackSpawn);
+        } else {
+            Bukkit.getLogger().info("§e[DEBUG] No fallback respawn location set.");
+        }
+    }
+
+
+
     public boolean hasIsland(Player player) {
         return playerIslands.containsKey(player.getUniqueId());
+    }
+
+    public Location getIslandSpawnLocation(Player player) {
+        Location islandLocation = playerIslands.get(player.getUniqueId());
+        if (islandLocation != null) {
+            return islandLocation.clone().add(1, 7, 1); // Same spawn location as teleport
+        }
+        return null;
     }
 
     private void loadPlayerIslands() {
