@@ -158,5 +158,18 @@ public class VoidWorldGeneratorPlugin extends JavaPlugin implements Listener {
             return new Location(world, configSettings.getSpawnX(worldName), spawnY,
                     configSettings.getSpawnZ(worldName));
         }
+
+        // CRITICAL: Override shouldGenerateStructures to return true
+        // CRITICAL: Override shouldGenerateStructures to return true
+        @Override
+        public boolean shouldGenerateStructures() {
+            return true; // This enables structure generation
+        }
+
+        // CRITICAL: Override shouldGenerateDecorations to return true
+        @Override
+        public boolean shouldGenerateDecorations() {
+            return true; // This enables decorations like ores, plants, etc.
+        }
     }
 }
