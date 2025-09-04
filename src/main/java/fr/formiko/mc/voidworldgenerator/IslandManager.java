@@ -61,7 +61,7 @@ public class IslandManager {
                     }
                 }.runTask(plugin);
             }
-        }.runTaskAsynchronously(plugin);
+        }.runTask(plugin);
     }
 
     private Location calculateNextIslandLocation(World world) {
