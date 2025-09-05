@@ -1,9 +1,15 @@
-name: $name
-version: $version
-main: $group.${name}Plugin
-description: $description
-author: Hydrolien
-website: https://github.com/HydrolienF/$name
-api-version: "$apiVersion"
+name: VoidWorldGenerator
+version: 1.0
+main: fr.formiko.mc.voidworldgenerator.VoidWorldGeneratorPlugin
+api-version: 1.21
+author: Hibiscus
+website: https://github.com/Hibiscus2247/VoidWorldGeneratorSkyBlock
 folia-supported: true
 load: STARTUP
+worlds:
+  world:
+    generator: VoidWorldGenerator
+  world_nether:
+    generator: VoidWorldGenerator
+  world_the_end:
+    generator: VoidWorldGenerator

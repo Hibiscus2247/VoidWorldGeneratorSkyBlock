@@ -45,6 +45,7 @@ public class VoidWorldGeneratorPlugin extends JavaPlugin implements Listener {
 
     @Override
     public ChunkGenerator getDefaultWorldGenerator(String worldName, String id) {
+        getLogger().info("§e[DEBUG] Generator requested for world: " + worldName + " with id: " + id);
         return new VoidChunkGenerator(worldName);
     }
 
